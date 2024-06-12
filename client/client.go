@@ -13,7 +13,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer connection.Close()
+	defer func() {
+		err := connection.Close()
+		if err != nil {
+			log.Println("Failed to close connection", err)
+		}
+	}()
 
 	go func() {
 		for {

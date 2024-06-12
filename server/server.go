@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -46,7 +48,12 @@ func NewTCPServer(ctx context.Context) *TCPServer {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	server := NewTCPServer(ctx)
-	defer server.listener.Close()
+	defer func() {
+		err := server.listener.Close()
+		if err != nil {
+			log.Println("Errors occurred while closing the listener:", err)
+		}
+	}()
 
 	log.Println("Server Running...")
 	log.Println("Listening on " + serverHost + ":" + serverPort)
@@ -62,19 +69,18 @@ func main() {
 		for {
 			connection, err := server.listener.Accept()
 			if err != nil {
-				fmt.Println("Error accepting: ", err.Error())
+				fmt.Println("Error accepting connection:", err.Error())
 				os.Exit(1)
 			}
 
-			go func(ctx context.Context) {
+			go func(ctx context.Context, connection net.Conn) {
 				client, err := server.acceptClient(connection)
 				if err != nil {
 					log.Printf("failed to accept a client: %s\n", err.Error())
-					return
 				}
 
 				go server.processClient(ctx, client, messagesChan)
-			}(ctx)
+			}(ctx, connection)
 
 			select {
 			case <-ctx.Done():
@@ -125,7 +131,7 @@ type Client struct {
 // TODO implement client termination after no message was read in some given period
 func (s *TCPServer) acceptClient(connection net.Conn) (*Client, error) {
 	if len(s.connections) == maxConnections {
-		_, _ = connection.Write([]byte("server has reached maximum connection\n"))
+		_, _ = connection.Write([]byte("server has reached maximum connections\n"))
 		_ = connection.Close()
 		return nil, fmt.Errorf("max capacity reached")
 	}
@@ -157,20 +163,30 @@ func (s *TCPServer) generateConnectionID() connectionID {
 
 func (s *TCPServer) disconnectClient(client *Client) {
 	_ = client.Connection.Close()
+
+	s.connectionsLock.Lock()
 	delete(s.connections, client.ID)
+	s.connectionsLock.Unlock()
+
 	log.Printf("client with ID: %s disconnected\n", client.ID)
 }
 
 func (s *TCPServer) processClient(ctx context.Context, client *Client, shareChan chan Message) {
-	defer s.disconnectClient(client)
 
 	go func(ctx context.Context, mc chan Message) {
 		for {
 			buffer := make([]byte, clientMessageBufferSize)
 			mLen, err := client.Connection.Read(buffer)
 			if err != nil {
-				return
+				if errors.Is(err, io.EOF) {
+					s.disconnectClient(client)
+					return
+				}
+
+				log.Println("failed to read from connection:", err)
 			}
+
+			log.Println("received message with len:", mLen)
 
 			mc <- Message{
 				senderID: client.ID,
