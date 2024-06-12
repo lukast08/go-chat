@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -8,11 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
-	"time"
 )
 
 const (
@@ -31,83 +27,68 @@ type TCPServer struct {
 	listener        net.Listener
 	connectionsLock sync.Mutex
 	connections     map[connectionID]net.Conn
+	messChan        chan message
 }
 
-func NewTCPServer(ctx context.Context) *TCPServer {
+func NewTCPServer(ctx context.Context) (*TCPServer, error) {
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", serverHost+":"+serverPort)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &TCPServer{
+
+	s := &TCPServer{
 		listener:    listener,
 		connections: make(map[connectionID]net.Conn),
+		messChan:    make(chan message, messagesChanSize),
 	}
+
+	go s.sendMessagesToAllConnections(ctx)
+
+	return s, nil
 }
 
-func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	server := NewTCPServer(ctx)
-	defer func() {
-		err := server.listener.Close()
-		if err != nil {
-			log.Println("Errors occurred while closing the listener:", err)
-		}
-	}()
-
+func (s *TCPServer) Start(ctx context.Context, errChan chan error) {
 	log.Println("Server Running...")
 	log.Println("Listening on " + serverHost + ":" + serverPort)
 	log.Println("Waiting for client...")
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	go func(ctx context.Context) {
-		messagesChan := make(chan Message, messagesChanSize)
-		go server.sendMessagesToAllConnections(ctx, messagesChan)
-
-		for {
-			connection, err := server.listener.Accept()
-			if err != nil {
-				fmt.Println("Error accepting connection:", err.Error())
-				os.Exit(1)
-			}
-
-			go func(ctx context.Context, connection net.Conn) {
-				client, err := server.acceptClient(connection)
-				if err != nil {
-					log.Printf("failed to accept a client: %s\n", err.Error())
-				}
-
-				go server.processClient(ctx, client, messagesChan)
-			}(ctx, connection)
-
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
+	for {
+		connection, err := s.listener.Accept()
+		if err != nil {
+			errChan <- fmt.Errorf("error accepting connection: %w", err)
 		}
-	}(ctx)
 
-	// wait for termination from console
-	<-sigs
-	cancel()
-	log.Println("terminating server...")
-	<-time.After(time.Second * 3)
+		go func(ctx context.Context, connection net.Conn) {
+			client, err := s.acceptClient(connection)
+			if err != nil {
+				log.Println("Failed to accept a client:", err.Error())
+				return
+			}
+
+			go s.processClient(ctx, client)
+		}(ctx, connection)
+
+		select {
+		case <-ctx.Done():
+			break
+		default:
+		}
+	}
+
 }
 
-type Message struct {
+type message struct {
 	senderID connectionID
 	message  string
 }
 
-func (s *TCPServer) sendMessagesToAllConnections(ctx context.Context, messages chan Message) {
+func (s *TCPServer) sendMessagesToAllConnections(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 		return
 	default:
-		for message := range messages {
+		for message := range s.messChan {
 			for userID, conn := range s.connections {
 				if userID == message.senderID {
 					continue
@@ -123,30 +104,43 @@ func (s *TCPServer) sendMessagesToAllConnections(ctx context.Context, messages c
 	}
 }
 
-type Client struct {
+type client struct {
 	ID         connectionID
 	Connection net.Conn
 }
 
-// TODO implement client termination after no message was read in some given period
-func (s *TCPServer) acceptClient(connection net.Conn) (*Client, error) {
-	if len(s.connections) == maxConnections {
-		_, _ = connection.Write([]byte("server has reached maximum connections\n"))
-		_ = connection.Close()
-		return nil, fmt.Errorf("max capacity reached")
-	}
+var errMaxCapacity = errors.New("maximum connection capacity reached")
 
+func (s *TCPServer) acceptClient(connection net.Conn) (*client, error) {
 	id := s.generateConnectionID()
 
 	s.connectionsLock.Lock()
+	if len(s.connections) == maxConnections {
+		s.connectionsLock.Unlock()
+		_, err := connection.Write([]byte("Chat room has reached maximum connections\n"))
+		if err != nil {
+			return nil, err
+		}
+
+		err = connection.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, errMaxCapacity
+	}
+
 	s.connections[id] = connection
 	s.connectionsLock.Unlock()
 
 	log.Printf("client with ID: %s connected\n", id)
 
-	_, _ = connection.Write([]byte("Welcome to the chat room!\n"))
+	_, err := connection.Write([]byte("Welcome to the chat room!\n"))
+	if err != nil {
+		return nil, err
+	}
 
-	return &Client{
+	return &client{
 		ID:         id,
 		Connection: connection,
 	}, nil
@@ -161,7 +155,7 @@ func (s *TCPServer) generateConnectionID() connectionID {
 	return connectionID(b)
 }
 
-func (s *TCPServer) disconnectClient(client *Client) {
+func (s *TCPServer) disconnectClient(client *client) {
 	_ = client.Connection.Close()
 
 	s.connectionsLock.Lock()
@@ -171,9 +165,8 @@ func (s *TCPServer) disconnectClient(client *Client) {
 	log.Printf("client with ID: %s disconnected\n", client.ID)
 }
 
-func (s *TCPServer) processClient(ctx context.Context, client *Client, shareChan chan Message) {
-
-	go func(ctx context.Context, mc chan Message) {
+func (s *TCPServer) processClient(ctx context.Context, client *client) {
+	go func(ctx context.Context, mc chan message) {
 		for {
 			buffer := make([]byte, clientMessageBufferSize)
 			mLen, err := client.Connection.Read(buffer)
@@ -188,7 +181,7 @@ func (s *TCPServer) processClient(ctx context.Context, client *Client, shareChan
 
 			log.Println("received message with len:", mLen)
 
-			mc <- Message{
+			mc <- message{
 				senderID: client.ID,
 				message:  string(buffer[:mLen]),
 			}
@@ -198,7 +191,7 @@ func (s *TCPServer) processClient(ctx context.Context, client *Client, shareChan
 			default:
 			}
 		}
-	}(ctx, shareChan)
+	}(ctx, s.messChan)
 
 	select {
 	case <-ctx.Done():
