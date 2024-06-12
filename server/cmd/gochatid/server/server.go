@@ -14,14 +14,16 @@ import (
 )
 
 const (
-	serverHost              = "localhost"
-	serverPort              = "8080"
 	letterBytes             = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	maxConnections          = 3
 	connectionIDLength      = 10
 	messagesChanSize        = 10
 	clientMessageBufferSize = 1024
 )
+
+type Config struct {
+	Port           string `default:":8080"`
+	MaxConnections int    `default:"3"`
+}
 
 type connectionID string
 
@@ -30,19 +32,22 @@ type TCPServer struct {
 	connectionsLock sync.Mutex
 	connections     map[connectionID]net.Conn
 	messChan        chan message
+
+	maxConnections int
 }
 
-func NewTCPServer(ctx context.Context) (*TCPServer, error) {
+func NewTCPServer(ctx context.Context, conf Config) (*TCPServer, error) {
 	lc := net.ListenConfig{}
-	listener, err := lc.Listen(ctx, "tcp", serverHost+":"+serverPort)
+	listener, err := lc.Listen(ctx, "tcp", conf.Port)
 	if err != nil {
 		return nil, err
 	}
 
 	s := &TCPServer{
-		listener:    listener,
-		connections: make(map[connectionID]net.Conn),
-		messChan:    make(chan message, messagesChanSize),
+		listener:       listener,
+		connections:    make(map[connectionID]net.Conn),
+		messChan:       make(chan message, messagesChanSize),
+		maxConnections: conf.MaxConnections,
 	}
 
 	go s.sendMessagesToAllConnections(ctx)
@@ -52,7 +57,6 @@ func NewTCPServer(ctx context.Context) (*TCPServer, error) {
 
 func (s *TCPServer) Start(ctx context.Context, errChan chan error) {
 	slog.Info("Server Running...")
-	slog.Info("Listening on " + serverHost + ":" + serverPort)
 	slog.Info("Waiting for client...")
 
 	for {
@@ -117,7 +121,7 @@ func (s *TCPServer) acceptClient(connection net.Conn) (*client, error) {
 	id := s.generateConnectionID()
 
 	s.connectionsLock.Lock()
-	if len(s.connections) == maxConnections {
+	if len(s.connections) == s.maxConnections {
 		s.connectionsLock.Unlock()
 		_, err := connection.Write([]byte("Chat room has reached maximum connections\n"))
 		if err != nil {

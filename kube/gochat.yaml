@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gochat
+  labels:
+    app: gochat
+spec:
+  replicas: 1 # TODO create way for multiple replicas to share incoming messages
+  selector:
+    matchLabels:
+      app: gochat
+  template:
+    metadata:
+      name: gochat
+      labels:
+        app: gochat
+    spec:
+      containers:
+        - name: gochat
+          image: accio1/gochat:v1.0
+          imagePullPolicy: Always
+          env:
+            - name: GOCHAT_PORT
+              value: ":8888"
+            - name: GOCHAT_MAX_CONNECTIONS
+              value: "3"
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gochat
+  labels:
+    app: gochat
+spec:
+  selector:
+    app: gochat
+  type: NodePort
+  ports:
+    - port: 80
+      name: http
+      targetPort: 8888
+
