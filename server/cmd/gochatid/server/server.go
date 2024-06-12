@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net"
 	"sync"
+
+	"server/internals/log"
 )
 
 const (
@@ -49,9 +51,9 @@ func NewTCPServer(ctx context.Context) (*TCPServer, error) {
 }
 
 func (s *TCPServer) Start(ctx context.Context, errChan chan error) {
-	log.Println("Server Running...")
-	log.Println("Listening on " + serverHost + ":" + serverPort)
-	log.Println("Waiting for client...")
+	slog.Info("Server Running...")
+	slog.Info("Listening on " + serverHost + ":" + serverPort)
+	slog.Info("Waiting for client...")
 
 	for {
 		connection, err := s.listener.Accept()
@@ -62,7 +64,7 @@ func (s *TCPServer) Start(ctx context.Context, errChan chan error) {
 		go func(ctx context.Context, connection net.Conn) {
 			client, err := s.acceptClient(connection)
 			if err != nil {
-				log.Println("Failed to accept a client:", err.Error())
+				slog.Error("failed to accept a client:", log.ErrorAttr(err))
 				return
 			}
 
@@ -133,7 +135,7 @@ func (s *TCPServer) acceptClient(connection net.Conn) (*client, error) {
 	s.connections[id] = connection
 	s.connectionsLock.Unlock()
 
-	log.Printf("client with ID: %s connected\n", id)
+	slog.Info("client connected", slog.String("clientID", string(id)))
 
 	_, err := connection.Write([]byte("Welcome to the chat room!\n"))
 	if err != nil {
@@ -162,7 +164,7 @@ func (s *TCPServer) disconnectClient(client *client) {
 	delete(s.connections, client.ID)
 	s.connectionsLock.Unlock()
 
-	log.Printf("client with ID: %s disconnected\n", client.ID)
+	slog.Info("client with disconnected", slog.String("clientID", string(client.ID)))
 }
 
 func (s *TCPServer) processClient(ctx context.Context, client *client) {
@@ -176,10 +178,8 @@ func (s *TCPServer) processClient(ctx context.Context, client *client) {
 					return
 				}
 
-				log.Println("failed to read from connection:", err)
+				slog.Error("failed to read from connection:", log.ErrorAttr(err))
 			}
-
-			log.Println("received message with len:", mLen)
 
 			mc <- message{
 				senderID: client.ID,

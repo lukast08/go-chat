@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"server/cmd/gochatid/server"
+	"server/internals/log"
 )
 
 func main() {
@@ -22,14 +23,14 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	errChan := make(chan error)
-	s.Start(ctx, errChan)
+	go s.Start(ctx, errChan)
 
 	select {
 	// detect termination from console to shut down launched goroutines
 	case <-sigs:
-		log.Println("terminating server...")
+		slog.Info("terminating server...")
 	case err := <-errChan:
-		log.Println("server encountered an error:", err)
+		slog.ErrorContext(ctx, "server encountered an error", log.ErrorAttr(err))
 	}
 	cancel()
 	<-time.After(time.Second * 3) // graceful shutdown
