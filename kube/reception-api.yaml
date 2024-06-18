@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gochat
+  name: reception-api
   labels:
-    app: gochat
+    app: reception-api
 spec:
   replicas: 1 # TODO create way for multiple replicas to share incoming messages
   selector:
     matchLabels:
-      app: gochat
+      app: reception-api
   template:
     metadata:
-      name: gochat
+      name: reception-api
       labels:
-        app: gochat
+        app: reception-api
     spec:
       containers:
-        - name: gochat
+        - name: reception-api-api
           image: accio1/gochat:v1.0
           imagePullPolicy: Always
           env:
-            - name: GOCHAT_PORT
+            - name: RECEPTIONAPI_PORT
               value: ":8888"
-            - name: GOCHAT_MAX_CONNECTIONS
+            - name: RECEPTIONAPI_MAX_CONNECTIONS
               value: "3"
       restartPolicy: Always
 
@@ -30,12 +30,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: gochat
+  name: reception-api
   labels:
-    app: gochat
+    app: reception-api
 spec:
   selector:
-    app: gochat
+    app: reception-api
   type: NodePort
   ports:
     - port: 80

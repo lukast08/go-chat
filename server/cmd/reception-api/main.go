@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/kelseyhightower/envconfig"
 
-	"server/cmd/gochatid/server"
+	"server/cmd/reception-api/server"
 	"server/internals/log"
 )
 
@@ -19,20 +18,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	conf := server.Config{}
-	err := envconfig.Process("gochat", &conf)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(conf)
-
-	s, err := server.NewTCPServer(ctx, conf)
+	err := envconfig.Process("receptionapi", &conf)
 	if err != nil {
 		panic(err)
 	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	s, err := server.NewTCPServer(ctx, conf)
+	if err != nil {
+		panic(err)
+	}
 
 	errChan := make(chan error)
 	go s.Start(ctx, errChan)
