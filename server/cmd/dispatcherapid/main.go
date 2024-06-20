@@ -10,15 +10,17 @@ import (
 
 	"github.com/kelseyhightower/envconfig"
 
-	"server/cmd/reception-api/server"
+	"server/cmd/dispatcherapid/server"
 	"server/internals/log"
+	"server/internals/rmqclient"
+	"server/internals/tcpserver"
 )
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	conf := server.Config{}
-	err := envconfig.Process("receptionapi", &conf)
+	conf := tcpserver.Config{}
+	err := envconfig.Process("dispatcherapi", &conf)
 	if err != nil {
 		panic(err)
 	}
@@ -26,13 +28,24 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	s, err := server.NewTCPServer(ctx, conf)
+	s, err := tcpserver.NewTCPServer(ctx, conf)
 	if err != nil {
 		panic(err)
 	}
 
 	errChan := make(chan error)
-	go s.Start(ctx, errChan)
+	go s.StartAcceptingConnections(ctx, errChan)
+
+	// TODO configurable
+	mqClient, err := rmqclient.NewRMQClient("guest", "rabbitmq:5672", "messages")
+	if err != nil {
+		panic(err)
+	}
+
+	sndr := server.NewReceiver(s, mqClient)
+	go sndr.Start(ctx)
+
+	slog.Info("dispatcher-api serving...")
 
 	select {
 	// detect termination from console to shut down launched goroutines

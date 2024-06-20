@@ -1,10 +1,14 @@
-BINARY_NAME=gochat
+RECEPTION_API_BINARY_NAME=receptionapi
+DISPATCHER_API_BINARY_NAME=dispatcherapi
 
-build:
-	go build -o ${BINARY_NAME} cmd/gochatid/main.go
+build-reception-api:
+	go build -o ${RECEPTION_API_BINARY_NAME} cmd/receptionapid/main.go
+
+build-dispatcher-api:
+	go build -o ${DISPATCHER_API_BINARY_NAME} cmd/dispatcherapid/main.go
 
 clean:
 	go clean
-	rm ${BINARY_NAME}
+	rm ${RECEPTION_API_BINARY_NAME} ${DISPATCHER_API_BINARY_NAME}
 
 

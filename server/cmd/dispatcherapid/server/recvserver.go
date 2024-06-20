@@ -27,18 +27,24 @@ func NewReceiver(mw MessageWriter, c Consumer) *ReceiverServer {
 	}
 }
 
-func (rs *ReceiverServer) Start(ctx context.Context) {
-	go func(ctx context.Context) {
-		msgChan, err := rs.consumer.StartConsuming(ctx)
-		if err != nil {
-			panic(err) // if I can not start consuming, I don't want the service to start
-		}
+// TODO bug with disconnected clients not deleted.
 
-		for msg := range msgChan {
+func (rs *ReceiverServer) Start(ctx context.Context) {
+	msgChan, err := rs.consumer.StartConsuming(ctx)
+	if err != nil {
+		panic(err) // if I can not start consuming, I don't want the service to start
+	}
+
+	for {
+		select {
+		case msg := <-msgChan:
+			slog.Info("sending message to all clients")
 			err := rs.messageWriter.WriteToAll(msg)
 			if err != nil {
 				slog.Error("failed to send messages", log.ErrorAttr(err))
 			}
+		case <-ctx.Done():
+			return
 		}
-	}(ctx)
+	}
 }

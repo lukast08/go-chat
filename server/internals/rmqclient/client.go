@@ -2,6 +2,7 @@ package rmqclient
 
 import (
 	"context"
+	"fmt"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -13,7 +14,7 @@ type RMQClient struct {
 }
 
 func NewRMQClient(user, addr, queueName string) (*RMQClient, error) {
-	conn, err := amqp.Dial("amqp://" + user + "@" + addr + "/")
+	conn, err := amqp.Dial(fmt.Sprintf("amqp://%s:%s@%s/", user, user, addr))
 	if err != nil {
 		return nil, err
 	}

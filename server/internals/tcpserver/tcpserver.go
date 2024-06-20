@@ -2,7 +2,6 @@ package tcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,11 +10,9 @@ import (
 	"sync"
 
 	"server/internals/log"
-	"server/internals/server"
 )
 
 const (
-	messagesChanSize        = 10
 	clientMessageBufferSize = 1024
 )
 
@@ -26,14 +23,14 @@ type Config struct {
 
 type TCPServer struct {
 	listener        net.Listener
-	connectionsLock sync.Mutex // TODO change to RWLock!!!
+	connectionsLock sync.RWMutex
 	clients         map[string]*client
 	newClientChan   chan string
 
 	maxConnections int
 }
 
-func NewTCPServer(ctx context.Context, conf Config, pub server.Publisher) (*TCPServer, error) {
+func NewTCPServer(ctx context.Context, conf Config) (*TCPServer, error) {
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", conf.Port)
 	if err != nil {
@@ -111,10 +108,10 @@ func (s *TCPServer) acceptClient(connection net.Conn) error {
 	return nil
 }
 
-func (s *TCPServer) ReceiveFromAll(ctx context.Context) <-chan []byte {
-	msgChan := make(chan []byte)
+func (s *TCPServer) ReceiveFromAll(ctx context.Context) <-chan Message {
+	msgChan := make(chan Message, 1_000) // arbitrary buffer size for now, // TODO get back to
 
-	go func(ctx context.Context, msgChan chan []byte) {
+	go func(ctx context.Context, msgChan chan Message) {
 		for {
 			select {
 			case connID := <-s.newClientChan:
@@ -128,7 +125,8 @@ func (s *TCPServer) ReceiveFromAll(ctx context.Context) <-chan []byte {
 	return msgChan
 }
 
-func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan chan []byte) {
+func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan chan Message) {
+	slog.Info("starting processing client", slog.String("clientID", client.ID))
 	for {
 		buffer := make([]byte, clientMessageBufferSize)
 		mLen, err := client.receive(buffer)
@@ -140,13 +138,9 @@ func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan c
 
 			slog.Error("failed to read from client:", log.ErrorAttr(err))
 		}
+		slog.Info("received message from client", slog.String("clientID", client.ID), slog.Int("nBytes", mLen))
 
-		body, err := json.Marshal(message{Body: buffer[:mLen], SenderID: client.ID})
-		if err != nil {
-			slog.Error("failed to marshal message", log.ErrorAttr(err))
-		}
-
-		msgChan <- body
+		msgChan <- Message{Body: buffer[:mLen], SenderID: client.ID}
 
 		select {
 		case <-ctx.Done():
@@ -163,7 +157,7 @@ func (s *TCPServer) disconnectClient(client *client) {
 	delete(s.clients, client.ID)
 	s.connectionsLock.Unlock()
 
-	slog.Info("client with disconnected", slog.String("clientID", string(client.ID)))
+	slog.Info("client disconnected", slog.String("clientID", string(client.ID)))
 }
 
 type writeToAllErr struct {
@@ -180,16 +174,18 @@ func (err writeToAllErr) Error() string {
 	)
 }
 
-// TODO protect by RW lock
+// TODO bug here somewhere, messages not sent to clients
 func (s *TCPServer) WriteToAll(msg []byte) error {
 	// not pre-allocating, as most of the time, hopefully, there should be no errors and nil will be returned
 	var errs []error
+	s.connectionsLock.RLock()
 	for _, client := range s.clients {
 		_, err := client.sendMessage(msg)
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
+	s.connectionsLock.RUnlock()
 
 	if errs != nil {
 		return writeToAllErr{
