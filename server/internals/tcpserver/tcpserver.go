@@ -76,11 +76,13 @@ func (s *TCPServer) StartAcceptingConnections(ctx context.Context, errChan chan 
 
 var errMaxCapacity = errors.New("maximum connection capacity reached")
 
+const maxCapacityMessage = "Chat room has reached maximum clients\n"
+
 func (s *TCPServer) acceptClient(connection net.Conn) error {
 	s.connectionsLock.Lock()
 	if len(s.clients) == s.maxConnections {
 		s.connectionsLock.Unlock()
-		_, err := connection.Write([]byte("Chat room has reached maximum clients\n"))
+		_, err := connection.Write([]byte(maxCapacityMessage))
 		if err != nil {
 			return err
 		}
