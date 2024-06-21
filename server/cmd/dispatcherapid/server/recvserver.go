@@ -39,7 +39,8 @@ func (rs *ReceiverServer) Start(ctx context.Context) {
 		select {
 		case msg := <-msgChan:
 			slog.Info("sending message to all clients")
-			err := rs.messageWriter.WriteToAll(msg)
+
+			err = rs.messageWriter.WriteToAll(msg)
 			if err != nil {
 				slog.Error("failed to send messages", log.ErrorAttr(err))
 			}

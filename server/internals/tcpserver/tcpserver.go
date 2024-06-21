@@ -100,11 +100,6 @@ func (s *TCPServer) acceptClient(connection net.Conn) error {
 
 	slog.Info("client connected", slog.String("clientID", c.ID))
 
-	_, err := c.sendMessage([]byte("Welcome to the chat room!\n"))
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -127,6 +122,7 @@ func (s *TCPServer) ReceiveFromAll(ctx context.Context) <-chan Message {
 
 func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan chan Message) {
 	slog.Info("starting processing client", slog.String("clientID", client.ID))
+
 	for {
 		buffer := make([]byte, clientMessageBufferSize)
 		mLen, err := client.receive(buffer)
@@ -140,7 +136,7 @@ func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan c
 		}
 		slog.Info("received message from client", slog.String("clientID", client.ID), slog.Int("nBytes", mLen))
 
-		msgChan <- Message{Body: buffer[:mLen], SenderID: client.ID}
+		msgChan <- Message{Body: string(buffer[:mLen]), SenderID: client.ID}
 
 		select {
 		case <-ctx.Done():
@@ -174,7 +170,6 @@ func (err writeToAllErr) Error() string {
 	)
 }
 
-// TODO bug here somewhere, messages not sent to clients
 func (s *TCPServer) WriteToAll(msg []byte) error {
 	// not pre-allocating, as most of the time, hopefully, there should be no errors and nil will be returned
 	var errs []error

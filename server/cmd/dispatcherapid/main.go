@@ -37,7 +37,7 @@ func main() {
 	go s.StartAcceptingConnections(ctx, errChan)
 
 	// TODO configurable
-	mqClient, err := rmqclient.NewRMQClient("guest", "rabbitmq:5672", "messages")
+	mqClient, err := rmqclient.NewRMQClient("guest", "localhost:5672", "messages")
 	if err != nil {
 		panic(err)
 	}

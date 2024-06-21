@@ -77,10 +77,9 @@ func (c *RMQClient) StartConsuming(ctx context.Context) (<-chan []byte, error) {
 	msgChan := make(chan []byte)
 	go func(ctx context.Context, msgChan chan []byte) {
 		for {
-			for d := range msgs {
-				msgChan <- d.Body
-			}
 			select {
+			case msg := <-msgs:
+				msgChan <- msg.Body
 			case <-ctx.Done():
 				return
 			}

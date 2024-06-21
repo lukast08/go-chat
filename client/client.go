@@ -3,14 +3,19 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"os"
 )
 
 // TODO rewrite client
+
+type message struct {
+	SenderID string `json:"sender_id"`
+	Body     string `json:"body"`
+}
 
 func connectDispatcher(ctx context.Context) error {
 	connection, err := net.Dial("tcp", "localhost:8799")
@@ -23,19 +28,25 @@ func connectDispatcher(ctx context.Context) error {
 			buff := make([]byte, 1024)
 			n, err := connection.Read(buff)
 			if err != nil {
-				log.Fatalln("Error reading:", err.Error())
+				slog.Error("failed to read from the server", slog.Any("err", err))
 				return
 			}
 
 			slog.Info("reading from dispatcher service", slog.Int("nBytes", n))
-
 			if n > 0 {
-				fmt.Print(string(buff[:n]))
+				var msg message
+				err := json.Unmarshal(buff[:n], &msg)
+				if err != nil {
+					slog.Error("failed to unmarshal incoming message", slog.Any("err", err))
+				}
+
+				fmt.Printf("(%s): %s", msg.SenderID, msg.Body)
 			}
 
 			select {
 			case <-ctx.Done():
 				break
+			default:
 			}
 		}
 	}()
