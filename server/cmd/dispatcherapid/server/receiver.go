@@ -3,13 +3,12 @@ package server
 import (
 	"context"
 	"log/slog"
-
-	"server/internals/log"
 )
 
 type ReceiverServer struct {
 	messageWriter MessageWriter
 	consumer      Consumer
+	logger        *slog.Logger
 }
 
 type Consumer interface {
@@ -20,16 +19,17 @@ type MessageWriter interface {
 	WriteToAll(msg []byte) error
 }
 
-func NewReceiver(mw MessageWriter, c Consumer) *ReceiverServer {
+func NewReceiver(mw MessageWriter, c Consumer, logger *slog.Logger) *ReceiverServer {
 	return &ReceiverServer{
 		messageWriter: mw,
 		consumer:      c,
+		logger:        logger,
 	}
 }
 
 // TODO bug with disconnected clients not deleted.
 
-func (rs *ReceiverServer) Start(ctx context.Context) {
+func (rs *ReceiverServer) StartReceiving(ctx context.Context) {
 	msgChan, err := rs.consumer.StartConsuming(ctx)
 	if err != nil {
 		panic(err) // if I can not start consuming, I don't want the service to start
@@ -38,11 +38,11 @@ func (rs *ReceiverServer) Start(ctx context.Context) {
 	for {
 		select {
 		case msg := <-msgChan:
-			slog.Info("sending message to all clients")
+			rs.logger.Info("sending message to all clients")
 
 			err = rs.messageWriter.WriteToAll(msg)
 			if err != nil {
-				slog.Error("failed to send messages", log.ErrorAttr(err))
+				rs.logger.Error("failed to send messages", slog.Any("err", err))
 			}
 		case <-ctx.Done():
 			return

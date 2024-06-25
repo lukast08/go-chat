@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"net"
 	"sync"
-
-	"server/internals/log"
 )
 
 const (
@@ -17,8 +15,8 @@ const (
 )
 
 type Config struct {
-	Port           string `default:":8080"`
-	MaxConnections int    `default:"3"`
+	Port           string
+	MaxConnections int
 }
 
 type TCPServer struct {
@@ -26,43 +24,44 @@ type TCPServer struct {
 	connectionsLock sync.RWMutex
 	clients         map[string]*client
 	newClientChan   chan string
+	logger          *slog.Logger
 
 	maxConnections int
 }
 
-func NewTCPServer(ctx context.Context, conf Config) (*TCPServer, error) {
+func NewTCPServer(ctx context.Context, logger *slog.Logger, conf Config) (*TCPServer, error) {
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", conf.Port)
 	if err != nil {
 		return nil, err
 	}
 
-	s := &TCPServer{
+	s := TCPServer{
 		listener:       listener,
 		clients:        make(map[string]*client),
 		maxConnections: conf.MaxConnections,
 		newClientChan:  make(chan string, conf.MaxConnections),
+		logger:         logger,
 	}
 
-	return s, nil
+	return &s, nil
 }
 
-func (s *TCPServer) StartAcceptingConnections(ctx context.Context, errChan chan error) {
-	slog.Info("Server Running...")
-	slog.Info("Waiting for client...")
+func (s *TCPServer) StartAcceptingConnections(ctx context.Context) {
+	s.logger.Info("Server Running...")
+	s.logger.Info("Waiting for client...")
 
 	for {
 		connection, err := s.listener.Accept()
 		if err != nil {
-			errChan <- fmt.Errorf("error accepting connection: %w", err)
+			s.logger.Error("error accepting connection", ErrAttr(err))
 		}
 
 		// running as a goroutine so that server can accept multiple clients at the same time
 		go func(ctx context.Context, connection net.Conn) {
 			err := s.acceptClient(connection)
 			if err != nil {
-				slog.Error("failed to accept a client:", log.ErrorAttr(err))
-				return
+				s.logger.Error("failed to accept a client:", ErrAttr(err))
 			}
 		}(ctx, connection)
 
@@ -100,13 +99,14 @@ func (s *TCPServer) acceptClient(connection net.Conn) error {
 	s.newClientChan <- c.ID
 	s.connectionsLock.Unlock()
 
-	slog.Info("client connected", slog.String("clientID", c.ID))
+	s.logger.Info("client connected", slog.String("clientID", c.ID))
 
 	return nil
 }
 
 func (s *TCPServer) ReceiveFromAll(ctx context.Context) <-chan Message {
-	msgChan := make(chan Message, 1_000) // arbitrary buffer size for now, // TODO get back to
+	// As per Uber go style: Channels should usually have a size of one or be unbuffered
+	msgChan := make(chan Message, 1)
 
 	go func(ctx context.Context, msgChan chan Message) {
 		for {
@@ -123,10 +123,10 @@ func (s *TCPServer) ReceiveFromAll(ctx context.Context) <-chan Message {
 }
 
 func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan chan Message) {
-	slog.Info("starting processing client", slog.String("clientID", client.ID))
+	s.logger.Info("starting processing client", slog.String("clientID", client.ID))
 
+	buffer := make([]byte, clientMessageBufferSize)
 	for {
-		buffer := make([]byte, clientMessageBufferSize)
 		mLen, err := client.receive(buffer)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -134,9 +134,9 @@ func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan c
 				return
 			}
 
-			slog.Error("failed to read from client:", log.ErrorAttr(err))
+			s.logger.Error("failed to read from client:", ErrAttr(err))
 		}
-		slog.Info("received message from client", slog.String("clientID", client.ID), slog.Int("nBytes", mLen))
+		s.logger.Info("received message from client", slog.String("clientID", client.ID), slog.Int("nBytes", mLen))
 
 		msgChan <- Message{Body: string(buffer[:mLen]), SenderID: client.ID}
 
@@ -155,7 +155,7 @@ func (s *TCPServer) disconnectClient(client *client) {
 	delete(s.clients, client.ID)
 	s.connectionsLock.Unlock()
 
-	slog.Info("client disconnected", slog.String("clientID", string(client.ID)))
+	s.logger.Info("client disconnected", slog.String("clientID", string(client.ID)))
 }
 
 type writeToAllErr struct {

@@ -2,6 +2,8 @@ package tcpserver
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
@@ -18,7 +20,7 @@ func TestNewTCPServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, err := NewTCPServer(ctx, conf)
+	_, err := NewTCPServer(ctx, nil, conf)
 	assert.NoError(t, err)
 }
 
@@ -31,10 +33,10 @@ func TestAcceptClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	server, err := NewTCPServer(ctx, conf)
+	server, err := NewTCPServer(ctx, slog.New(slog.NewJSONHandler(io.Discard, nil)), conf)
 	assert.NoError(t, err)
 
-	go server.StartAcceptingConnections(ctx, make(chan error))
+	go server.StartAcceptingConnections(ctx)
 
 	_, err = net.Dial("tcp", server.listener.Addr().String())
 	assert.NoError(t, err)
@@ -77,10 +79,10 @@ func TestReceiveFromAll(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	server, err := NewTCPServer(ctx, conf)
+	server, err := NewTCPServer(ctx, slog.New(slog.NewJSONHandler(io.Discard, nil)), conf)
 	assert.NoError(t, err)
 
-	go server.StartAcceptingConnections(ctx, make(chan error))
+	go server.StartAcceptingConnections(ctx)
 
 	conn, err := net.Dial("tcp", server.listener.Addr().String())
 	assert.NoError(t, err)
@@ -111,10 +113,10 @@ func TestWriteToAll(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	server, err := NewTCPServer(ctx, conf)
+	server, err := NewTCPServer(ctx, slog.New(slog.NewJSONHandler(io.Discard, nil)), conf)
 	assert.NoError(t, err)
 
-	go server.StartAcceptingConnections(ctx, make(chan error))
+	go server.StartAcceptingConnections(ctx)
 
 	conn1, err := net.Dial("tcp", server.listener.Addr().String())
 	assert.NoError(t, err)

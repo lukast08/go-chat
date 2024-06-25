@@ -11,15 +11,12 @@ import (
 	"github.com/kelseyhightower/envconfig"
 
 	"server/cmd/receptionapid/server"
-	"server/internals/log"
-	"server/internals/rmqclient"
-	"server/internals/tcpserver"
 )
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	conf := tcpserver.Config{}
+	conf := server.Conf{}
 	err := envconfig.Process("receptionapi", &conf)
 	if err != nil {
 		panic(err)
@@ -27,32 +24,17 @@ func main() {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	s, err := tcpserver.NewTCPServer(ctx, conf)
-	if err != nil {
-		panic(err)
-	}
-
 	errChan := make(chan error)
-	go s.StartAcceptingConnections(ctx, errChan)
 
-	// TODO configurable
-	mqClient, err := rmqclient.NewRMQClient("guest", "localhost:5672", "messages")
-	if err != nil {
-		panic(err)
-	}
-
-	sndr := server.NewSender(s, mqClient)
-	go sndr.SendMessagesToQueue(ctx)
-
-	slog.Info("reception-api serving...")
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	go server.Start(ctx, conf, logger, errChan)
 
 	select {
 	// detect termination from console to shut down launched goroutines
 	case <-sigs:
 		slog.Info("terminating server...")
 	case err := <-errChan:
-		slog.ErrorContext(ctx, "server encountered an error", log.ErrorAttr(err))
+		slog.ErrorContext(ctx, "server encountered an error", slog.Any("err", err))
 	}
 	cancel()
 	<-time.After(time.Second * 3) // graceful shutdown
