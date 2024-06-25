@@ -38,5 +38,7 @@ func main() {
 		slog.ErrorContext(ctx, "server encountered an error", slog.Any("err", err))
 	}
 	cancel()
-	<-time.After(time.Second * 3) // graceful shutdown
+
+	const gracefulShutdownTimeout = time.Second * 3
+	<-time.After(gracefulShutdownTimeout)
 }

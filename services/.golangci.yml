@@ -1,0 +1,36 @@
+# https://golangci-lint.run/usage/configuration/#config-file
+
+run:
+  timeout: 5m
+
+issues:
+  exclude-rules:
+    - path: '(.+)_test\.go'
+      linters:
+        - gomnd
+        - gosec
+        - prealloc
+
+linters:
+  disable-all: true
+  enable:
+    - goimports
+    - gocritic
+    - gocyclo
+    - gomodguard
+    - unconvert
+    - unparam
+    - prealloc
+    - gomnd
+    - stylecheck
+    - exportloopref
+    - gocognit
+    - errname
+    - goconst
+    - gofmt
+    - gosec
+    - nestif
+    - nilerr
+    - reassign
+    - usestdlibvars
+    - unused

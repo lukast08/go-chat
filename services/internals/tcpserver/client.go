@@ -25,6 +25,7 @@ func newClient(connection net.Conn) *client {
 func generateConnectionID() string {
 	b := make([]byte, connectionIDLength)
 	for i := range b {
+		// nolint: gosec // no need to use secure random number generator
 		b[i] = letterBytes[rand.Intn(len(letterBytes))]
 	}
 

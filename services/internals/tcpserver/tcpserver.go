@@ -54,16 +54,16 @@ func (s *TCPServer) StartAcceptingConnections(ctx context.Context) {
 	for {
 		connection, err := s.listener.Accept()
 		if err != nil {
-			s.logger.Error("error accepting connection", ErrAttr(err))
+			s.logger.Error("error accepting connection", slog.Any("err", err))
 		}
 
 		// running as a goroutine so that server can accept multiple clients at the same time
-		go func(ctx context.Context, connection net.Conn) {
+		go func(connection net.Conn) {
 			err := s.acceptClient(connection)
 			if err != nil {
-				s.logger.Error("failed to accept a client:", ErrAttr(err))
+				s.logger.Error("failed to accept a client:", slog.Any("err", err))
 			}
-		}(ctx, connection)
+		}(connection)
 
 		select {
 		case <-ctx.Done():
@@ -134,7 +134,7 @@ func (s *TCPServer) processClient(ctx context.Context, client *client, msgChan c
 				return
 			}
 
-			s.logger.Error("failed to read from client:", ErrAttr(err))
+			s.logger.Error("failed to read from client:", slog.Any("err", err))
 		}
 		s.logger.Info("received message from client", slog.String("clientID", client.ID), slog.Int("nBytes", mLen))
 
@@ -155,15 +155,15 @@ func (s *TCPServer) disconnectClient(client *client) {
 	delete(s.clients, client.ID)
 	s.connectionsLock.Unlock()
 
-	s.logger.Info("client disconnected", slog.String("clientID", string(client.ID)))
+	s.logger.Info("client disconnected", slog.String("clientID", client.ID))
 }
 
-type writeToAllErr struct {
+type writeToAllError struct {
 	nConnections int
 	errs         []error
 }
 
-func (err writeToAllErr) Error() string {
+func (err writeToAllError) Error() string {
 	return fmt.Sprintf(
 		" %d/%d writes failed, first error: %s",
 		len(err.errs),
@@ -185,7 +185,7 @@ func (s *TCPServer) WriteToAll(msg []byte) error {
 	s.connectionsLock.RUnlock()
 
 	if errs != nil {
-		return writeToAllErr{
+		return writeToAllError{
 			nConnections: len(s.clients),
 			errs:         errs,
 		}
