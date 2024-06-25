@@ -29,6 +29,10 @@ jobs:
       working-directory: ./services
       run: make build-dispatcher-api
 
-    - name: Test
+    - name: Linter
       working-directory: ./services
       run: go test -race -v ./...
+
+    - name: Test
+      working-directory: ./services
+      run: golangci-lint run ./...
