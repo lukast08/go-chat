@@ -28,7 +28,7 @@ jobs:
       working-directory: ./services
       run: make build-dispatcher-api
 
-    - name: Install and run golangci-lint
+    - name: Linter
       working-directory: ./services
       run:
         export PATH=$HOME/bin:$PATH
